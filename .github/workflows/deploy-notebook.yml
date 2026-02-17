@@ -105,7 +105,7 @@ jobs:
             {
               "task_key": "task_ingest_competitions",
               "description": "Ejecuta notebook de Preparación de Ingesta de Master file de competición",
-              "depends_on": [{"task_key": "task_00_prep_ambiente"}],
+              "depends_on": [], //[{"task_key": "task_00_prep_ambiente"}],
               "notebook_task": {
                 "notebook_path": "$DEST_BASE/01_ingest_competitions",
                 "base_parameters": { "catalogo": "catalog_prod", "container": "prod", "storage_account": "adlssmartdata0303ev", "esquema": "bronze" }
@@ -115,7 +115,7 @@ jobs:
             {
               "task_key": "task_ingest_teams",
               "description": "Ejecuta notebook de Preparación de Ingesta de Master file de Equipos",
-              "depends_on": [{"task_key": "task_00_prep_ambiente"}],
+              "depends_on": [], //[{"task_key": "task_00_prep_ambiente"}],
               "notebook_task": {
                 "notebook_path": "$DEST_BASE/02_ingest_teams",
                 "base_parameters": { "catalogo": "catalog_prod", "container": "prod", "storage_account": "adlssmartdata0303ev", "esquema": "bronze" }
@@ -125,7 +125,7 @@ jobs:
             {
               "task_key": "task_ingest_matches",
               "description": "Ejecuta notebook de Preparación de Ingesta de Fact file de Partidos de SC",
-              "depends_on": [{"task_key": "task_00_prep_ambiente"}],
+              "depends_on": [], //[{"task_key": "task_00_prep_ambiente"}],
               "notebook_task": {
                 "notebook_path": "$DEST_BASE/03_ingest_matches",
                 "base_parameters": { "catalogo": "catalog_prod", "container": "prod", "storage_account": "adlssmartdata0303ev", "esquema": "bronze" }
@@ -135,7 +135,7 @@ jobs:
             {
               "task_key": "task_ingest_physical",
               "description": "Ejecuta notebook de Preparación de Ingesta de Master file de Información Fisica",
-              "depends_on": [{"task_key": "task_00_prep_ambiente"}],
+              "depends_on": [], //[{"task_key": "task_00_prep_ambiente"}],
               "notebook_task": {
                 "notebook_path": "$DEST_BASE/04_ingest_physical",
                 "base_parameters": { "catalogo": "catalog_prod", "container": "prod", "storage_account": "adlssmartdata0303ev", "esquema": "bronze" }
