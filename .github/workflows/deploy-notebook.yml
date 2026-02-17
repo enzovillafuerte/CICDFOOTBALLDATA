@@ -192,29 +192,29 @@ jobs:
         echo "RUN_ID=$(echo "$run_response" | jq -r '.run_id')" >> $GITHUB_ENV
     
     - name: Monitor Workflow Execution
-          run: |
-            DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
-            DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
-            RUN_ID="${{ env.RUN_ID }}"
-            
-            while true; do
-              status_resp=$(curl -s -X GET -H "Authorization: Bearer $DEST_TOKEN" "$DEST_HOST/api/2.1/jobs/runs/get?run_id=$RUN_ID")
-              state=$(echo "$status_resp" | jq -r '.state.life_cycle_state')
-              result=$(echo "$status_resp" | jq -r '.state.result_state // "RUNNING"')
-              
-              echo "Estado actual: $state ($result)"
-              
-              if [[ "$state" == "TERMINATED" || "$state" == "INTERNAL_ERROR" || "$state" == "SKIPPED" ]]; then
-                if [ "$result" == "SUCCESS" ]; then
-                  echo "✅ ¡Éxito!"
-                  exit 0
-                else
-                  echo "❌ El Workflow falló o se abortó con estado: $state"
-                  exit 1
-                fi
-              fi
-              sleep 30
-            done
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        RUN_ID="${{ env.RUN_ID }}"
+        
+        while true; do
+          status_resp=$(curl -s -X GET -H "Authorization: Bearer $DEST_TOKEN" "$DEST_HOST/api/2.1/jobs/runs/get?run_id=$RUN_ID")
+          state=$(echo "$status_resp" | jq -r '.state.life_cycle_state')
+          result=$(echo "$status_resp" | jq -r '.state.result_state // "RUNNING"')
+          
+          echo "Estado actual: $state ($result)"
+          
+          if [[ "$state" == "TERMINATED" || "$state" == "INTERNAL_ERROR" || "$state" == "SKIPPED" ]]; then
+            if [ "$result" == "SUCCESS" ]; then
+              echo "✅ ¡Éxito!"
+              exit 0
+            else
+              echo "❌ El Workflow falló o se abortó con estado: $state"
+              exit 1
+            fi
+          fi
+          sleep 30
+        done
 
     - name: Clean up
       run: rm -rf notebooks_to_deploy workflow_config.json
