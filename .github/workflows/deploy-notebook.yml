@@ -1,5 +1,4 @@
-name: Dynamic Databricks Notebook Deploy
-
+name: Dynamic Databricks Notebook Deploy - Sporting Cristal
 on:
   push:
     branches:
@@ -8,23 +7,22 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v3
-
+    
     - name: Install jq & curl
       run: sudo apt-get update && sudo apt-get install -y jq curl
-
+    
     - name: Export multiple notebooks (raw)
       run: |
         ORIGIN_HOST=${{ secrets.DATABRICKS_ORIGIN_HOST }}
         ORIGIN_TOKEN=${{ secrets.DATABRICKS_ORIGIN_TOKEN }}
+        # Ruta de origen donde tienes tus notebooks de desarrollo
         NOTEBOOK_BASE="/Workspace/Users/enzovillafuerte99@outlook.com/CICDFOOTBALLDATA/proceso"
-        NOTEBOOKS=("00_preparacion_ambiente" "01_ingest_competitions" "02_ingest_teams" "03_ingest_matches" "04_ingest_physical" "05_transform_silver" "06_load_gold")  # Agrega más según necesitesas
-
+        NOTEBOOKS=("00_preparacion_ambiente" "01_ingest_competitions" "02_ingest_teams" "03_ingest_matches" "04_ingest_physical" "05_transform_silver" "06_load_gold")
+        
         mkdir -p notebooks_to_deploy
-
         for nb in "${NOTEBOOKS[@]}"; do
           echo "Exportando $nb en modo raw..."
           curl -s -X GET \
@@ -32,24 +30,18 @@ jobs:
             "$ORIGIN_HOST/api/2.0/workspace/export?path=$NOTEBOOK_BASE/$nb&format=SOURCE&direct_download=true" \
             --output "notebooks_to_deploy/$nb.py"
         done
-
+    
     - name: Deploy notebooks to Destination Workspace
       run: |
         DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
         DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
-        DEST_BASE="/py"
-
+        DEST_BASE="/py/final/prod"
         for file in notebooks_to_deploy/*.py; do
           name=$(basename "$file" .py)
           dest_path="$DEST_BASE/$name"
-
           echo "Creando carpeta $DEST_BASE si no existe..."
-          curl -s -X POST \
-            -H "Authorization: Bearer $DEST_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"path\":\"$DEST_BASE\"}" \
-            "$DEST_HOST/api/2.0/workspace/mkdirs"
-
+          curl -s -X POST -H "Authorization: Bearer $DEST_TOKEN" -H "Content-Type: application/json" -d "{\"path\":\"$DEST_BASE\"}" "$DEST_HOST/api/2.0/workspace/mkdirs"
+          
           echo "Importando $file → $dest_path"
           curl -s -X POST \
             -H "Authorization: Bearer $DEST_TOKEN" \
@@ -61,9 +53,161 @@ jobs:
             -F "content=@$file" \
             "$DEST_HOST/api/2.0/workspace/import"
         done
+    
+    - name: Check if workflow exists and delete if necessary
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        WORKFLOW_NAME="WF_ADB_CRISTAL_PROD"
+        
+        existing_job_id=$(curl -s -X GET -H "Authorization: Bearer $DEST_TOKEN" "$DEST_HOST/api/2.1/jobs/list" | jq -r --arg name "$WORKFLOW_NAME" '.jobs[]? | select(.settings.name == $name) | .job_id')
+        
+        if [ "$existing_job_id" != "" ] && [ "$existing_job_id" != "null" ]; then
+          echo "Workflow encontrado con ID: $existing_job_id. Eliminando..."
+          curl -s -X POST -H "Authorization: Bearer $DEST_TOKEN" -H "Content-Type: application/json" -d "{\"job_id\": $existing_job_id}" "$DEST_HOST/api/2.1/jobs/delete"
+        fi
+    
+    - name: Get existing cluster ID
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        CLUSTER_NAME="cluster_SD"
+        cluster_id=$(curl -s -X GET -H "Authorization: Bearer $DEST_TOKEN" "$DEST_HOST/api/2.0/clusters/list" | jq -r --arg name "$CLUSTER_NAME" '.clusters[]? | select(.cluster_name == $name) | .cluster_id')
+        
+        if [ "$cluster_id" != "" ] && [ "$cluster_id" != "null" ]; then
+          echo "CLUSTER_ID=$cluster_id" >> $GITHUB_ENV
+        else
+          echo "❌ No se encontró el cluster: $CLUSTER_NAME"
+          exit 1
+        fi
+    
+    - name: Create Databricks Workflow WF_ADB_CRISTAL_PROD
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        CLUSTER_ID="${{ env.CLUSTER_ID }}"
+        DEST_BASE="/py/final/prod"
+        
+        cat > workflow_config.json << EOF
+        {
+          "name": "WF_ADB_CRISTAL_PROD",
+          "format": "MULTI_TASK",
+          "tasks": [
+            {
+              "task_key": "task_00_prep_ambiente",
+              "description": "Ejecuta notebook de Preparación de Ambiente",
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/00_preparacion_ambiente",
+                "base_parameters": { "catalog_name": "catalog_prod", "container": "prod", "storage_account": "adlssmartdata0303ev", "storage_credential": "credential" }
+              },
+              "existing_cluster_id": "$CLUSTER_ID"
+            },
+            {
+              "task_key": "task_ingest_competitions",
+              "description": "Ejecuta notebook de Preparación de Ingesta de Master file de competición",
+              "depends_on": [{"task_key": "task_00_prep_ambiente"}],
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/01_ingest_competitions",
+                "base_parameters": { "catalogo": "catalog_prod", "container": "prod", "storage_account": "adlssmartdata0303ev", "esquema": "bronze" }
+              },
+              "existing_cluster_id": "$CLUSTER_ID"
+            },
+            {
+              "task_key": "task_ingest_teams",
+              "description": "Ejecuta notebook de Preparación de Ingesta de Master file de Equipos",
+              "depends_on": [{"task_key": "task_00_prep_ambiente"}],
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/02_ingest_teams",
+                "base_parameters": { "catalogo": "catalog_prod", "container": "prod", "storage_account": "adlssmartdata0303ev", "esquema": "bronze" }
+              },
+              "existing_cluster_id": "$CLUSTER_ID"
+            },
+            {
+              "task_key": "task_ingest_matches",
+              "description": "Ejecuta notebook de Preparación de Ingesta de Fact file de Partidos de SC",
+              "depends_on": [{"task_key": "task_00_prep_ambiente"}],
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/03_ingest_matches",
+                "base_parameters": { "catalogo": "catalog_prod", "container": "prod", "storage_account": "adlssmartdata0303ev", "esquema": "bronze" }
+              },
+              "existing_cluster_id": "$CLUSTER_ID"
+            },
+            {
+              "task_key": "task_ingest_physical",
+              "description": "Ejecuta notebook de Preparación de Ingesta de Master file de Información Fisica",
+              "depends_on": [{"task_key": "task_00_prep_ambiente"}],
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/04_ingest_physical",
+                "base_parameters": { "catalogo": "catalog_prod", "container": "prod", "storage_account": "adlssmartdata0303ev", "esquema": "bronze" }
+              },
+              "existing_cluster_id": "$CLUSTER_ID"
+            },
+            {
+              "task_key": "task_transform_silver",
+              "description": "Ejecuta notebook de Proceso de Transformación",
+              "depends_on": [
+                {"task_key": "task_ingest_competitions"}, {"task_key": "task_ingest_teams"}, 
+                {"task_key": "task_ingest_matches"}, {"task_key": "task_ingest_physical"}
+              ],
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/05_transform_silver",
+                "base_parameters": { "catalogo": "catalog_prod", "esquema_source": "bronze", "esquema_sink": "silver" }
+              },
+              "existing_cluster_id": "$CLUSTER_ID"
+            },
+            {
+              "task_key": "task_load_gold",
+              "description": "Ejecuta notebook de Agregaciones Gold de capas productivas para dsahboard",
+              "depends_on": [{"task_key": "task_transform_silver"}],
+              "notebook_task": {
+                "notebook_path": "$DEST_BASE/06_load_gold",
+                "base_parameters": { "catalogo": "catalog_prod", "esquema_source": "silver", "esquema_sink": "golden" }
+              },
+              "existing_cluster_id": "$CLUSTER_ID"
+            }
+          ],
+          "timeout_seconds": 7200,
+          "email_notifications": { "on_failure": ["enzovillafuerte99@gmail.com"] },
+          "tags": { "project": "Sporting_Cristal_Analytics", "env": "prod" }
+        }
+        EOF
+        
+        create_response=$(curl -s -X POST -H "Authorization: Bearer $DEST_TOKEN" -H "Content-Type: application/json" -d @workflow_config.json "$DEST_HOST/api/2.1/jobs/create")
+        echo "JOB_ID=$(echo "$create_response" | jq -r '.job_id')" >> $GITHUB_ENV
+    
+    - name: Validate Workflow Configuration
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        JOB_ID="${{ env.JOB_ID }}"
+        echo "Validando Workflow ID: $JOB_ID"
+        curl -s -X GET -H "Authorization: Bearer $DEST_TOKEN" "$DEST_HOST/api/2.1/jobs/get?job_id=$JOB_ID" | jq '.settings.tasks[] | {task_key, depends_on}'
+    
+    - name: Execute Workflow WF_ADB_CRISTAL_PROD
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        JOB_ID="${{ env.JOB_ID }}"
+        run_response=$(curl -s -X POST -H "Authorization: Bearer $DEST_TOKEN" -H "Content-Type: application/json" -d "{\"job_id\": $JOB_ID}" "$DEST_HOST/api/2.1/jobs/run-now")
+        echo "RUN_ID=$(echo "$run_response" | jq -r '.run_id')" >> $GITHUB_ENV
+    
+    - name: Monitor Workflow Execution
+      run: |
+        DEST_HOST=${{ secrets.DATABRICKS_DEST_HOST }}
+        DEST_TOKEN=${{ secrets.DATABRICKS_DEST_TOKEN }}
+        RUN_ID="${{ env.RUN_ID }}"
+        
+        while true; do
+          status_resp=$(curl -s -X GET -H "Authorization: Bearer $DEST_TOKEN" "$DEST_HOST/api/2.1/jobs/runs/get?run_id=$RUN_ID")
+          state=$(echo "$status_resp" | jq -r '.state.life_cycle_state')
+          result=$(echo "$status_resp" | jq -r '.state.result_state // "RUNNING"')
+          echo "Estado actual: $state ($result)"
+          
+          if [ "$state" == "TERMINATED" ]; then
+            if [ "$result" == "SUCCESS" ]; then exit 0; else exit 1; fi
+          fi
+          sleep 30
+        done
 
     - name: Clean up
-      run: rm -rf notebooks_to_deploy
-
-    - name: Done
-      run: echo "All notebooks deployed with raw content!"
+      run: rm -rf notebooks_to_deploy workflow_config.json
