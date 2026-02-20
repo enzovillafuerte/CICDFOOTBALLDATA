@@ -24,8 +24,6 @@ El producto final es un reporte en **Power BI** que permite analizar:
 * **Estructura Defensiva:** Monitoreo del tiempo efectivo del equipo en bloques alto, medio y bajo.
 * **Progresión Física:** Visualización cronológica de distancias recorridas y sprints por jugador para la gestión de carga y prevención de lesiones.
 
-* Acá voy a adjuntar la imagen
-
 <img width="1440" height="338" alt="image" src="https://github.com/user-attachments/assets/cbc53b50-4ff8-4f3a-8c35-983019140e7d" />
 
 ## 🚀 Stack Tecnológico
